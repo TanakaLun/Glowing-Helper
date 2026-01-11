@@ -2,10 +2,12 @@ package io.tl.glowinghelper
 
 import android.Manifest
 import android.content.ContentValues
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.provider.MediaStore
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -65,7 +67,6 @@ import androidx.core.view.WindowCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.InputStream
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -147,10 +148,9 @@ fun PNGFineTuneApp() {
                 } else {
                     val permission = Manifest.permission.READ_EXTERNAL_STORAGE
                     if (ContextCompat.checkSelfPermission(context, permission) == 
-                        android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                        PackageManager.PERMISSION_GRANTED) {
                         imagePicker.launch("image/*")
                     } else {
-                        // 对于低版本，直接请求权限
                         imagePicker.launch("image/*")
                     }
                 }
