@@ -495,9 +495,9 @@ fun PixelEditDialog(
         dismissButton = {
             Button(
                 onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer
-                )
+                // colors = ButtonDefaults.buttonColors(
+                    // containerColor = MaterialTheme.colorScheme.errorContainer
+                // )
             ) {
                 Text("取消")
             }
