@@ -578,64 +578,43 @@ fun UnsavedChangesDialog(
 ) {
     AlertDialog(
         onDismissRequest = onCancel,
-        title = { Text("未保存的修改") },
-        text = {
-            Column {
-                Text("当前图片有未保存的修改。")
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("是否要保存修改后再退出？", fontWeight = FontWeight.Medium)
-            }
-        },
+        title = { Text("保存修改？") },
+        text = { Text("当前图片有未保存的修改，退出前是否保存？") },
+        
+        // 确认槽位：放置最相关的两个动作
         confirmButton = {
-            // 使用Row来水平排列三个按钮
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                // 按钮1: 还是不了
-                OutlinedButton(
-                    onClick = onCancel,
-                    modifier = Modifier.weight(1f),
-                    enabled = !isSavingAndExiting
-                ) {
-                    Text("还是不了")
-                }
-                
-                Spacer(modifier = Modifier.width(8.dp))
-                
-                // 按钮2: 直接退出
-                OutlinedButton(
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // 直接退出
+                TextButton(
                     onClick = onExitWithoutSaving,
-                    modifier = Modifier.weight(1f),
                     enabled = !isSavingAndExiting,
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer
-                    )
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("直接退出")
+                    Text("丢弃并退出")
                 }
                 
-                Spacer(modifier = Modifier.width(8.dp))
-                
-                // 按钮3: 保存并退出
+                // 保存并退出
                 Button(
                     onClick = onSaveAndExit,
-                    modifier = Modifier.weight(1f),
-                    enabled = !isSavingAndExiting,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
+                    enabled = !isSavingAndExiting
                 ) {
-                    if (isSavingAndExiting) {
-                        Text("保存中...")
-                    } else {
-                        Text("保存并退出")
-                    }
+                    Text(if (isSavingAndExiting) "保存中..." else "保存")
                 }
+            }
+        },
+        
+        // 取消槽位：放置中立动作
+        dismissButton = {
+            TextButton(
+                onClick = onCancel,
+                enabled = !isSavingAndExiting
+            ) {
+                Text("返回")
             }
         }
     )
 }
+
 
 data class PixelInfo(
     val x: Int,
