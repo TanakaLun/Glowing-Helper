@@ -2,10 +2,8 @@ package io.tl.glowinghelper
 
 import android.Manifest
 import android.content.ContentValues
-import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
@@ -21,11 +19,38 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions // 修正此处导入
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -47,7 +72,10 @@ import kotlinx.coroutines.withContext
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // 设置全屏UI
         setupFullScreenUI()
+        
         setContent {
             MaterialTheme {
                 PNGFineTuneApp()
@@ -58,6 +86,28 @@ class MainActivity : ComponentActivity() {
     private fun setupFullScreenUI() {
         enableEdgeToEdge()
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.insetsController?.hide(
+                android.view.WindowInsets.Type.statusBars() or 
+                android.view.WindowInsets.Type.navigationBars()
+            )
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        setupFullScreenUI()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.insetsController?.hide(
+                android.view.WindowInsets.Type.statusBars() or 
+                android.view.WindowInsets.Type.navigationBars()
+            )
+        }
     }
 }
 
@@ -73,14 +123,15 @@ fun PNGFineTuneApp() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     
-    // 使用 PickVisualMedia 替代 GetContent，无需申请权限即可访问图片
     val imagePicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia(),
+        contract = ActivityResultContracts.GetContent(),
         onResult = { uri ->
             uri?.let {
                 imageUri = it
                 scope.launch {
-                    val bitmap = loadImageBitmap(context, it)
+                    val bitmap = withContext(Dispatchers.IO) {
+                        loadImageBitmap(context, it)
+                    }
                     bitmap?.let { loadedBitmap ->
                         imageBitmap = loadedBitmap.asImageBitmap()
                         pixelData = PixelData.fromBitmap(loadedBitmap)
@@ -91,23 +142,37 @@ fun PNGFineTuneApp() {
     )
     
     if (imageUri == null) {
-        SelectImageScreen {
-            imagePicker.launch(ActivityResultContracts.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-        }
+        SelectImageScreen(
+            onSelectImage = {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    imagePicker.launch("image/*")
+                } else {
+                    val permission = Manifest.permission.READ_EXTERNAL_STORAGE
+                    if (ContextCompat.checkSelfPermission(context, permission) == 
+                        PackageManager.PERMISSION_GRANTED) {
+                        imagePicker.launch("image/*")
+                    } else {
+                        imagePicker.launch("image/*")
+                    }
+                }
+            }
+        )
     } else {
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("PNG像素透明度编辑器", fontSize = 18.sp) },
+                    title = { Text("PNG像素透明度编辑器") },
                     actions = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(if (isDraggingEnabled) "缩放" else "编辑", style = MaterialTheme.typography.bodySmall)
-                            Switch(
-                                checked = isDraggingEnabled,
-                                onCheckedChange = { isDraggingEnabled = it },
-                                modifier = Modifier.padding(horizontal = 8.dp)
-                            )
-                        }
+                        Switch(
+                            checked = isDraggingEnabled,
+                            onCheckedChange = { isDraggingEnabled = it }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (isDraggingEnabled) "缩放拖拽" else "编辑模式",
+                            fontSize = 14.sp,
+                            modifier = Modifier.padding(end = 16.dp)
+                        )
                     }
                 )
             }
@@ -118,17 +183,21 @@ fun PNGFineTuneApp() {
                     .padding(innerPadding)
                     .padding(16.dp)
             ) {
-                if (pixelData != null) {
-                    Box(modifier = Modifier.weight(1f)) {
-                        ImageEditor(
-                            pixelData = pixelData!!,
-                            isDraggingEnabled = isDraggingEnabled,
-                            onPixelClick = { selectedPixel = it },
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                        )
-                    }
+                if (imageBitmap != null && pixelData != null) {
+                    ImageEditor(
+                        imageBitmap = imageBitmap!!,
+                        pixelData = pixelData!!,
+                        isDraggingEnabled = isDraggingEnabled,
+                        onPixelClick = { pixelInfo ->
+                            selectedPixel = pixelInfo
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                    )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
                     
                     Button(
                         onClick = {
@@ -136,9 +205,12 @@ fun PNGFineTuneApp() {
                                 pixelData?.let { saveImage(context, it) }
                             }
                         },
-                        modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        )
                     ) {
-                        Text("导出无损 PNG")
+                        Text("保存修改")
                     }
                 }
             }
@@ -154,89 +226,6 @@ fun PNGFineTuneApp() {
                 selectedPixel = null
             }
         )
-    }
-}
-
-@Composable
-fun ImageEditor(
-    pixelData: PixelData,
-    isDraggingEnabled: Boolean,
-    onPixelClick: (PixelInfo) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
-    
-    Box(
-        modifier = modifier
-            .clipToBounds()
-            .pointerInput(isDraggingEnabled) {
-                if (isDraggingEnabled) {
-                    detectTransformGestures { _, pan, zoom, _ ->
-                        scale *= zoom
-                        offset += pan
-                    }
-                }
-            }
-    ) {
-        Canvas(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(!isDraggingEnabled, pixelData, scale, offset) {
-                    if (!isDraggingEnabled) {
-                        detectTapGestures { tapOffset ->
-                            val canvasWidth = size.width
-                            val canvasHeight = size.height
-                            val finalScale = (minOf(canvasWidth / pixelData.width, canvasHeight / pixelData.height)) * scale
-                            
-                            val centerX = (canvasWidth - pixelData.width * finalScale) / 2 + offset.x
-                            val centerY = (canvasHeight - pixelData.height * finalScale) / 2 + offset.y
-                            
-                            val pixelX = ((tapOffset.x - centerX) / finalScale).toInt()
-                            val pixelY = ((tapOffset.y - centerY) / finalScale).toInt()
-                            
-                            if (pixelX in 0 until pixelData.width && pixelY in 0 until pixelData.height) {
-                                onPixelClick(pixelData.getPixel(pixelX, pixelY))
-                            }
-                        }
-                    }
-                }
-        ) {
-            val finalScale = (minOf(size.width / pixelData.width, size.height / pixelData.height)) * scale
-            val centerX = (size.width - pixelData.width * finalScale) / 2 + offset.x
-            val centerY = (size.height - pixelData.height * finalScale) / 2 + offset.y
-            
-            // 性能优化：只绘制可见区域内的像素（虽然对于小图嵌套循环OK，但大图建议优化）
-            for (y in 0 until pixelData.height) {
-                for (x in 0 until pixelData.width) {
-                    val pixel = pixelData.getPixel(x, y)
-                    val px = centerX + x * finalScale
-                    val py = centerY + y * finalScale
-                    
-                    if (px + finalScale > 0 && px < size.width && py + finalScale > 0 && py < size.height) {
-                        drawRect(
-                            color = androidx.compose.ui.graphics.Color(
-                                red = pixel.red / 255f,
-                                green = pixel.green / 255f,
-                                blue = pixel.blue / 255f,
-                                alpha = pixel.alpha / 255f
-                            ),
-                            topLeft = Offset(px, py),
-                            size = Size(finalScale, finalScale)
-                        )
-                        // 只有缩放到足够大时才绘制网格线
-                        if (finalScale > 20f) {
-                            drawRect(
-                                color = androidx.compose.ui.graphics.Color.Gray.copy(alpha = 0.3f),
-                                topLeft = Offset(px, py),
-                                size = Size(finalScale, finalScale),
-                                style = Stroke(width = 1f)
-                            )
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -282,118 +271,308 @@ fun SelectImageScreen(onSelectImage: () -> Unit) {
 }
 
 @Composable
+fun ImageEditor(
+    imageBitmap: androidx.compose.ui.graphics.ImageBitmap,
+    pixelData: PixelData,
+    isDraggingEnabled: Boolean,
+    onPixelClick: (PixelInfo) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    
+    Box(
+        modifier = modifier
+            .clipToBounds()
+            .pointerInput(isDraggingEnabled) {
+                if (isDraggingEnabled) {
+                    detectTransformGestures { centroid, pan, zoom, rotation ->
+                        scale *= zoom
+                        offset += pan
+                    }
+                }
+            }
+    ) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(!isDraggingEnabled, pixelData, scale, offset) {
+                    if (!isDraggingEnabled) {
+                        detectTapGestures { tapOffset ->
+                            val canvasWidth = size.width
+                            val canvasHeight = size.height
+                            val imageWidth = imageBitmap.width.toFloat()
+                            val imageHeight = imageBitmap.height.toFloat()
+                            
+                            val scaleToFit = minOf(
+                                canvasWidth / imageWidth,
+                                canvasHeight / imageHeight
+                            )
+                            
+                            val finalScale = scaleToFit * scale
+                            
+                            val centerX = (canvasWidth - imageWidth * finalScale) / 2 + offset.x
+                            val centerY = (canvasHeight - imageHeight * finalScale) / 2 + offset.y
+                            
+                            val pixelX = ((tapOffset.x - centerX) / finalScale).toInt()
+                            val pixelY = ((tapOffset.y - centerY) / finalScale).toInt()
+                            
+                            if (pixelX in 0 until pixelData.width && 
+                                pixelY in 0 until pixelData.height) {
+                                val pixelInfo = pixelData.getPixel(pixelX, pixelY)
+                                onPixelClick(pixelInfo)
+                            }
+                        }
+                    }
+                }
+        ) {
+            val canvasWidth = size.width
+            val canvasHeight = size.height
+            val imageWidth = imageBitmap.width.toFloat()
+            val imageHeight = imageBitmap.height.toFloat()
+            
+            val scaleToFit = minOf(
+                canvasWidth / imageWidth,
+                canvasHeight / imageHeight
+            )
+            
+            val finalScale = scaleToFit * scale
+            val centerX = (canvasWidth - imageWidth * finalScale) / 2 + offset.x
+            val centerY = (canvasHeight - imageHeight * finalScale) / 2 + offset.y
+            
+            // 绘制每个像素
+            for (y in 0 until pixelData.height) {
+                for (x in 0 until pixelData.width) {
+                    val pixel = pixelData.getPixel(x, y)
+                    if (pixel.alpha > 0) {
+                        val pixelX = centerX + x * finalScale
+                        val pixelY = centerY + y * finalScale
+                        val pixelSize = finalScale
+                        
+                        if (pixelX + pixelSize > 0 && 
+                            pixelX < canvasWidth && 
+                            pixelY + pixelSize > 0 && 
+                            pixelY < canvasHeight) {
+                            
+                            // 绘制像素
+                            drawRect(
+                                color = androidx.compose.ui.graphics.Color(
+                                    red = pixel.red / 255f,
+                                    green = pixel.green / 255f,
+                                    blue = pixel.blue / 255f,
+                                    alpha = pixel.alpha / 255f
+                                ),
+                                topLeft = Offset(pixelX, pixelY),
+                                size = Size(pixelSize, pixelSize)
+                            )
+                            
+                            // 绘制边框
+                            drawRect(
+                                color = androidx.compose.ui.graphics.Color.Gray.copy(alpha = 0.2f),
+                                topLeft = Offset(pixelX, pixelY),
+                                size = Size(pixelSize, pixelSize),
+                                style = Stroke(width = 0.5f)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 fun PixelEditDialog(
     pixelInfo: PixelInfo,
     onDismiss: () -> Unit,
     onSave: (Int) -> Unit
 ) {
     var alphaInput by remember { mutableStateOf(pixelInfo.alpha.toString()) }
+    var error by remember { mutableStateOf<String?>(null) }
     
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("编辑像素") },
+        title = { Text("修改像素透明度") },
         text = {
             Column {
-                Text("坐标: (${pixelInfo.x}, ${pixelInfo.y})", style = MaterialTheme.typography.bodySmall)
-                Spacer(modifier = Modifier.height(8.dp))
+                Text("位置: (${pixelInfo.x}, ${pixelInfo.y})")
+                Text("颜色: RGB(${pixelInfo.red}, ${pixelInfo.green}, ${pixelInfo.blue})")
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
                 OutlinedTextField(
                     value = alphaInput,
-                    onValueChange = { alphaInput = it.filter { c -> c.isDigit() } },
+                    onValueChange = { newValue ->
+                        alphaInput = newValue.filter { it.isDigit() }
+                        error = null
+                    },
                     label = { Text("透明度 (0-255)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), // 修正此处引用
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth()
                 )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("预览:", modifier = Modifier.padding(end = 8.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(
+                                androidx.compose.ui.graphics.Color(
+                                    red = pixelInfo.red / 255f,
+                                    green = pixelInfo.green / 255f,
+                                    blue = pixelInfo.blue / 255f,
+                                    alpha = (alphaInput.toIntOrNull() ?: pixelInfo.alpha) / 255f
+                                ),
+                                RoundedCornerShape(4.dp)
+                            )
+                    )
+                }
             }
         },
         confirmButton = {
-            TextButton(onClick = {
-                val a = alphaInput.toIntOrNull() ?: 255
-                onSave(a.coerceIn(0, 255))
-            }) { Text("确定") }
+            Button(
+                onClick = {
+                    val alpha = alphaInput.toIntOrNull()
+                    if (alpha == null || alpha !in 0..255) {
+                        error = "请输入0-255之间的整数"
+                    } else {
+                        onSave(alpha)
+                    }
+                }
+            ) {
+                Text("确认")
+            }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Text("取消")
+            }
         }
     )
 }
 
-// 数据类部分保持基本不变，但建议将 PixelData 的 toBitmap 放在 IO 线程执行
-data class PixelInfo(val x: Int, val y: Int, val red: Int, val green: Int, val blue: Int, var alpha: Int)
+data class PixelInfo(
+    val x: Int,
+    val y: Int,
+    val red: Int,
+    val green: Int,
+    val blue: Int,
+    val alpha: Int
+)
 
-class PixelData(val width: Int, val height: Int, private val pixels: Array<PixelInfo>) {
-    fun getPixel(x: Int, y: Int) = pixels[y * width + x]
+class PixelData(
+    val width: Int,
+    val height: Int,
+    private val pixels: Array<PixelInfo>
+) {
+    fun getPixel(x: Int, y: Int): PixelInfo {
+        return pixels[y * width + x]
+    }
+    
     fun updatePixelAlpha(x: Int, y: Int, newAlpha: Int) {
-        pixels[y * width + x].alpha = newAlpha
+        val index = y * width + x
+        val oldPixel = pixels[index]
+        pixels[index] = oldPixel.copy(alpha = newAlpha)
     }
+    
     fun toBitmap(): Bitmap {
-        val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        val colors = IntArray(width * height)
-        for (i in pixels.indices) {
-            val p = pixels[i]
-            colors[i] = Color.argb(p.alpha, p.red, p.green, p.blue)
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                val pixel = getPixel(x, y)
+                bitmap.setPixel(x, y, Color.argb(
+                    pixel.alpha,
+                    pixel.red,
+                    pixel.green,
+                    pixel.blue
+                ))
+            }
         }
-        bmp.setPixels(colors, 0, width, 0, 0, width, height)
-        return bmp
+        return bitmap
     }
+    
     companion object {
         fun fromBitmap(bitmap: Bitmap): PixelData {
-            val w = bitmap.width
-            val h = bitmap.height
-            val pixels = Array(w * h) { i ->
-                val x = i % w
-                val y = i / w
-                val c = bitmap.getPixel(x, y)
-                PixelInfo(x, y, Color.red(c), Color.green(c), Color.blue(c), Color.alpha(c))
+            val width = bitmap.width
+            val height = bitmap.height
+            val pixels = Array(width * height) { index ->
+                val x = index % width
+                val y = index / width
+                val color = bitmap.getPixel(x, y)
+                PixelInfo(
+                    x = x,
+                    y = y,
+                    red = Color.red(color),
+                    green = Color.green(color),
+                    blue = Color.blue(color),
+                    alpha = Color.alpha(color)
+                )
             }
-            return PixelData(w, h, pixels)
+            return PixelData(width, height, pixels)
         }
     }
 }
 
-suspend fun loadImageBitmap(context: Context, uri: Uri): Bitmap? = withContext(Dispatchers.IO) {
-    try {
-        context.contentResolver.openInputStream(uri)?.use { 
-            // 关键：inScaled = false 确保不按屏幕密度缩放图片像素
-            val options = BitmapFactory.Options().apply { inScaled = false }
-            BitmapFactory.decodeStream(it, null, options)
-        }
-    } catch (e: Exception) { null }
-}
-
-suspend fun saveImage(context: Context, pixelData: PixelData) = withContext(Dispatchers.IO) {
-    try {
-        val bitmap = pixelData.toBitmap()
-        val resolver = context.contentResolver
-        val contentValues = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, "Edited_${System.currentTimeMillis()}.png")
-            put(MediaStore.MediaColumns.MIME_TYPE, "image/png")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.MediaColumns.RELATIVE_PATH, "Pictures/GlowingHelper")
-                put(MediaStore.MediaColumns.IS_PENDING, 1)
+suspend fun loadImageBitmap(context: android.content.Context, uri: Uri): Bitmap? {
+    return withContext(Dispatchers.IO) {
+        try {
+            context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                android.graphics.BitmapFactory.decodeStream(inputStream)
             }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
         }
-        
-        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
-        uri?.let {
-            resolver.openOutputStream(it)?.use { out ->
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                contentValues.clear()
-                contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                resolver.update(it, contentValues, null, null)
-            }
-            withContext(Dispatchers.Main) { Toast.makeText(context, "保存成功", Toast.LENGTH_SHORT).show() }
-        }
-    } catch (e: Exception) {
-        withContext(Dispatchers.Main) { Toast.makeText(context, "保存失败", Toast.LENGTH_SHORT).show() }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun SelectImageScreen(onSelectImage: () -> Unit) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Button(onClick = onSelectImage) { Text("选取 PNG 图片") }
+suspend fun saveImage(context: android.content.Context, pixelData: PixelData) {
+    withContext(Dispatchers.IO) {
+        try {
+            val bitmap = pixelData.toBitmap()
+            val fileName = "edited_png_${System.currentTimeMillis()}.png"
+            
+            val contentValues = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                put(MediaStore.MediaColumns.MIME_TYPE, "image/png")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.MediaColumns.IS_PENDING, 1)
+                }
+            }
+            
+            val resolver = context.contentResolver
+            val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+            
+            uri?.let {
+                resolver.openOutputStream(it)?.use { outputStream ->
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
+                }
+                
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    contentValues.clear()
+                    contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                    resolver.update(uri, contentValues, null, null)
+                }
+                
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "图片已保存", Toast.LENGTH_SHORT).show()
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            withContext(Dispatchers.Main) {
+                Toast.makeText(context, "保存失败: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 }
