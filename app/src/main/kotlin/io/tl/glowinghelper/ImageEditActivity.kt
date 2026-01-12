@@ -46,6 +46,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -580,36 +581,37 @@ fun UnsavedChangesDialog(
         onDismissRequest = onCancel,
         title = { Text("保存修改？") },
         text = { Text("当前图片有未保存的修改，退出前是否保存？") },
-        
-        // 确认槽位：放置最相关的两个动作
         confirmButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // 直接退出
-                TextButton(
-                    onClick = onExitWithoutSaving,
-                    enabled = !isSavingAndExiting,
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Text("丢弃并退出")
-                }
-                
-                // 保存并退出
+            // 采用垂直排列方式解决拥挤问题
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Button(
                     onClick = onSaveAndExit,
+                    modifier = Modifier.fillMaxWidth(),
                     enabled = !isSavingAndExiting
                 ) {
-                    Text(if (isSavingAndExiting) "保存中..." else "保存")
+                    Text(if (isSavingAndExiting) "保存中..." else "保存并退出")
                 }
-            }
-        },
-        
-        // 取消槽位：放置中立动作
-        dismissButton = {
-            TextButton(
-                onClick = onCancel,
-                enabled = !isSavingAndExiting
-            ) {
-                Text("返回")
+                
+                OutlinedButton(
+                    onClick = onExitWithoutSaving,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isSavingAndExiting,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+                ) {
+                    Text("直接退出")
+                }
+
+                TextButton(
+                    onClick = onCancel,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isSavingAndExiting
+                ) {
+                    Text("取消", color = MaterialTheme.colorScheme.outline)
+                }
             }
         }
     )
