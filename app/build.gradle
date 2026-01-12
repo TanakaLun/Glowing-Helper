@@ -38,9 +38,6 @@ android {
             // Default file with automatically generated optimization rules.
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
 
-                ...
-            )
-            ...
         }
     }
 
