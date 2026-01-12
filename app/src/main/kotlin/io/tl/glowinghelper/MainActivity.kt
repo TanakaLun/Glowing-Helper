@@ -38,6 +38,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -71,6 +72,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import io.tl.glowinghelper.ui.theme.GlowingHelperTheme
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.HorizontalDivider
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -123,6 +132,9 @@ fun PNGFineTuneApp() {
     var selectedPixel by remember { mutableStateOf<PixelInfo?>(null) }
     var isDraggingEnabled by remember { mutableStateOf(false) }
     var originalAspectRatio by remember { mutableStateOf(1f) }
+    var hasUnsavedChanges by remember { mutableStateOf(false) }
+    var showUnsavedDialog by remember { mutableStateOf(false) }
+    var isSavingAndExiting by remember { mutableStateOf(false) }
     
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -132,6 +144,7 @@ fun PNGFineTuneApp() {
         onResult = { uri ->
             uri?.let {
                 imageUri = it
+                hasUnsavedChanges = false
                 scope.launch {
                     val bitmap = withContext(Dispatchers.IO) {
                         loadImageBitmap(context, it)
@@ -147,6 +160,26 @@ fun PNGFineTuneApp() {
                         }
                     }
                 }
+            }
+        }
+    )
+    
+    // 处理系统返回操作
+    androidx.activity.compose.BackHandler(
+        enabled = imageUri != null && selectedPixel == null, // 仅在图像编辑界面且没有打开像素编辑对话框时生效
+        onBack = {
+            if (hasUnsavedChanges) {
+                // 如果有未保存的修改，显示警告对话框
+                showUnsavedDialog = true
+            } else {
+                // 没有未保存的修改，直接返回图片选择界面
+                imageUri = null
+                imageBitmap = null
+                pixelData = null
+                selectedPixel = null
+                isDraggingEnabled = false
+                originalAspectRatio = 1f
+                hasUnsavedChanges = false
             }
         }
     )
@@ -183,6 +216,13 @@ fun PNGFineTuneApp() {
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            if (hasUnsavedChanges) {
+                                Text(
+                                    text = "有未保存的修改",
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
                         }
                     },
                     actions = {
@@ -246,7 +286,12 @@ fun PNGFineTuneApp() {
                     Button(
                         onClick = {
                             scope.launch {
-                                pixelData?.let { saveImage(context, it) }
+                                pixelData?.let {
+                                    val saved = saveImage(context, it)
+                                    if (saved) {
+                                        hasUnsavedChanges = false
+                                    }
+                                }
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
@@ -265,9 +310,74 @@ fun PNGFineTuneApp() {
         PixelEditDialog(
             pixelInfo = pixelInfo,
             onDismiss = { selectedPixel = null },
-            onSave = { newAlpha ->
-                pixelData?.updatePixelAlpha(pixelInfo.x, pixelInfo.y, newAlpha)
+            onSave = { newAlpha, applyToAllSameColor ->
+                if (applyToAllSameColor) {
+                    // 应用到此颜色的所有像素
+                    pixelData?.updateAllPixelsWithColor(
+                        targetRed = pixelInfo.red,
+                        targetGreen = pixelInfo.green,
+                        targetBlue = pixelInfo.blue,
+                        newAlpha = newAlpha
+                    )
+                } else {
+                    // 只修改当前像素
+                    pixelData?.updatePixelAlpha(pixelInfo.x, pixelInfo.y, newAlpha)
+                }
+                hasUnsavedChanges = true
                 selectedPixel = null
+            }
+        )
+    }
+    
+    // 未保存修改警告对话框
+    if (showUnsavedDialog) {
+        UnsavedChangesDialog(
+            isSavingAndExiting = isSavingAndExiting,
+            onCancel = { showUnsavedDialog = false },
+            onExitWithoutSaving = {
+                showUnsavedDialog = false
+                // 直接退出，不保存
+                imageUri = null
+                imageBitmap = null
+                pixelData = null
+                selectedPixel = null
+                isDraggingEnabled = false
+                originalAspectRatio = 1f
+                hasUnsavedChanges = false
+            },
+            onSaveAndExit = {
+                scope.launch {
+                    isSavingAndExiting = true
+                    pixelData?.let {
+                        val saved = saveImage(context, it)
+                        if (saved) {
+                            // 保存成功，退出
+                            showUnsavedDialog = false
+                            isSavingAndExiting = false
+                            imageUri = null
+                            imageBitmap = null
+                            pixelData = null
+                            selectedPixel = null
+                            isDraggingEnabled = false
+                            originalAspectRatio = 1f
+                            hasUnsavedChanges = false
+                        } else {
+                            // 保存失败，保持对话框打开
+                            isSavingAndExiting = false
+                        }
+                    } ?: run {
+                        // 没有像素数据，直接退出
+                        isSavingAndExiting = false
+                        showUnsavedDialog = false
+                        imageUri = null
+                        imageBitmap = null
+                        pixelData = null
+                        selectedPixel = null
+                        isDraggingEnabled = false
+                        originalAspectRatio = 1f
+                        hasUnsavedChanges = false
+                    }
+                }
             }
         )
     }
@@ -430,9 +540,10 @@ fun ImageEditor(
 fun PixelEditDialog(
     pixelInfo: PixelInfo,
     onDismiss: () -> Unit,
-    onSave: (Int) -> Unit
+    onSave: (Int, Boolean) -> Unit  // 修改：添加布尔参数表示是否应用到所有相同颜色
 ) {
     var alphaInput by remember { mutableStateOf(pixelInfo.alpha.toString()) }
+    var applyToAllSameColor by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     
     AlertDialog(
@@ -457,6 +568,28 @@ fun PixelEditDialog(
                 )
                 
                 Spacer(modifier = Modifier.height(8.dp))
+                
+                // 新增：批量修改选项
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Checkbox(
+                        checked = applyToAllSameColor,
+                        onCheckedChange = { applyToAllSameColor = it }
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text("应用到所有相同颜色的像素", fontWeight = FontWeight.Medium)
+                        Text(
+                            "将此透明度设置应用到所有RGB(${pixelInfo.red}, ${pixelInfo.green}, ${pixelInfo.blue})的像素",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
@@ -476,6 +609,15 @@ fun PixelEditDialog(
                             )
                     )
                 }
+                
+                error?.let {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = it,
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 14.sp
+                    )
+                }
             }
         },
         confirmButton = {
@@ -485,7 +627,7 @@ fun PixelEditDialog(
                     if (alpha == null || alpha !in 0..255) {
                         error = "请输入0-255之间的整数"
                     } else {
-                        onSave(alpha)
+                        onSave(alpha, applyToAllSameColor)
                     }
                 }
             ) {
@@ -494,12 +636,77 @@ fun PixelEditDialog(
         },
         dismissButton = {
             Button(
-                onClick = onDismiss,
-                // colors = ButtonDefaults.buttonColors(
-                    // containerColor = MaterialTheme.colorScheme.errorContainer
-                // )
+                onClick = onDismiss
             ) {
                 Text("取消")
+            }
+        }
+    )
+}
+
+@Composable
+fun UnsavedChangesDialog(
+    isSavingAndExiting: Boolean,
+    onCancel: () -> Unit,
+    onExitWithoutSaving: () -> Unit,
+    onSaveAndExit: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text("未保存的修改") },
+        text = {
+            Column {
+                Text("当前图片有未保存的修改。")
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("是否要保存修改后再退出？", fontWeight = FontWeight.Medium)
+            }
+        },
+        confirmButton = {
+            // 使用Row来水平排列三个按钮
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                // 按钮1: 还是不了
+                OutlinedButton(
+                    onClick = onCancel,
+                    modifier = Modifier.weight(1f),
+                    enabled = !isSavingAndExiting
+                ) {
+                    Text("还是不了")
+                }
+                
+                Spacer(modifier = Modifier.width(8.dp))
+                
+                // 按钮2: 直接退出
+                OutlinedButton(
+                    onClick = onExitWithoutSaving,
+                    modifier = Modifier.weight(1f),
+                    enabled = !isSavingAndExiting,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    )
+                ) {
+                    Text("直接退出")
+                }
+                
+                Spacer(modifier = Modifier.width(8.dp))
+                
+                // 按钮3: 保存并退出
+                Button(
+                    onClick = onSaveAndExit,
+                    modifier = Modifier.weight(1f),
+                    enabled = !isSavingAndExiting,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    if (isSavingAndExiting) {
+                        Text("保存中...")
+                    } else {
+                        Text("保存并退出")
+                    }
+                }
             }
         }
     )
@@ -527,6 +734,18 @@ class PixelData(
         val index = y * width + x
         val oldPixel = pixels[index]
         pixels[index] = oldPixel.copy(alpha = newAlpha)
+    }
+    
+    // 新增：批量修改相同颜色像素的透明度
+    fun updateAllPixelsWithColor(targetRed: Int, targetGreen: Int, targetBlue: Int, newAlpha: Int) {
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                val pixel = getPixel(x, y)
+                if (pixel.red == targetRed && pixel.green == targetGreen && pixel.blue == targetBlue) {
+                    updatePixelAlpha(x, y, newAlpha)
+                }
+            }
+        }
     }
     
     fun toBitmap(): Bitmap {
@@ -580,8 +799,8 @@ suspend fun loadImageBitmap(context: android.content.Context, uri: Uri): Bitmap?
     }
 }
 
-suspend fun saveImage(context: android.content.Context, pixelData: PixelData) {
-    withContext(Dispatchers.IO) {
+suspend fun saveImage(context: android.content.Context, pixelData: PixelData): Boolean {
+    return withContext(Dispatchers.IO) {
         try {
             val bitmap = pixelData.toBitmap()
             val fileName = "edited_png_${System.currentTimeMillis()}.png"
@@ -611,12 +830,19 @@ suspend fun saveImage(context: android.content.Context, pixelData: PixelData) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(context, "图片已保存", Toast.LENGTH_SHORT).show()
                 }
+                true
+            } ?: run {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "保存失败: 无法创建文件", Toast.LENGTH_SHORT).show()
+                }
+                false
             }
         } catch (e: Exception) {
             e.printStackTrace()
             withContext(Dispatchers.Main) {
                 Toast.makeText(context, "保存失败: ${e.message}", Toast.LENGTH_SHORT).show()
             }
+            false
         }
     }
 }
