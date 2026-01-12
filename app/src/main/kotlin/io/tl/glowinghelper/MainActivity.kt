@@ -23,8 +23,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -39,9 +39,9 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -60,6 +60,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -68,6 +69,7 @@ import androidx.core.view.WindowCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import io.tl.glowinghelper.ui.theme.GlowingHelperTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -77,7 +79,7 @@ class MainActivity : ComponentActivity() {
         setupFullScreenUI()
         
         setContent {
-            MaterialTheme {
+            GlowingHelperTheme {
                 PNGFineTuneApp()
             }
         }
@@ -119,6 +121,7 @@ fun PNGFineTuneApp() {
     var pixelData by remember { mutableStateOf<PixelData?>(null) }
     var selectedPixel by remember { mutableStateOf<PixelInfo?>(null) }
     var isDraggingEnabled by remember { mutableStateOf(false) }
+    var originalAspectRatio by remember { mutableStateOf(1f) }
     
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -135,6 +138,12 @@ fun PNGFineTuneApp() {
                     bitmap?.let { loadedBitmap ->
                         imageBitmap = loadedBitmap.asImageBitmap()
                         pixelData = PixelData.fromBitmap(loadedBitmap)
+                        // 计算原始图片的宽高比
+                        originalAspectRatio = if (loadedBitmap.height > 0) {
+                            loadedBitmap.width.toFloat() / loadedBitmap.height.toFloat()
+                        } else {
+                            1f
+                        }
                     }
                 }
             }
@@ -161,18 +170,36 @@ fun PNGFineTuneApp() {
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("PNG像素透明度编辑器") },
+                    title = { 
+                        Column {
+                            Text(
+                                "Glowing Helper",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 20.sp
+                            )
+                            Text(
+                                text = if (isDraggingEnabled) "缩放/拖拽模式" else "像素编辑模式",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    },
                     actions = {
-                        Switch(
-                            checked = isDraggingEnabled,
-                            onCheckedChange = { isDraggingEnabled = it }
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = if (isDraggingEnabled) "缩放拖拽" else "编辑模式",
-                            fontSize = 14.sp,
-                            modifier = Modifier.padding(end = 16.dp)
-                        )
+                        OutlinedButton(
+                            onClick = { isDraggingEnabled = !isDraggingEnabled },
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (isDraggingEnabled) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant
+                                }
+                            )
+                        ) {
+                            Text(
+                                text = if (isDraggingEnabled) "切换至编辑" else "切换至缩放",
+                                fontSize = 14.sp
+                            )
+                        }
                     }
                 )
             }
@@ -181,24 +208,40 @@ fun PNGFineTuneApp() {
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-                    .padding(16.dp)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 if (imageBitmap != null && pixelData != null) {
-                    ImageEditor(
-                        imageBitmap = imageBitmap!!,
-                        pixelData = pixelData!!,
-                        isDraggingEnabled = isDraggingEnabled,
-                        onPixelClick = { pixelInfo ->
-                            selectedPixel = pixelInfo
-                        },
+                    // 图片编辑器区域 - 使用原始宽高比
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f)
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                    )
+                            .aspectRatio(originalAspectRatio)
+                            .background(
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .padding(1.dp)
+                    ) {
+                        ImageEditor(
+                            imageBitmap = imageBitmap!!,
+                            pixelData = pixelData!!,
+                            isDraggingEnabled = isDraggingEnabled,
+                            onPixelClick = { pixelInfo ->
+                                if (!isDraggingEnabled) {
+                                    selectedPixel = pixelInfo
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    color = MaterialTheme.colorScheme.surface,
+                                    shape = RoundedCornerShape(7.dp)
+                                )
+                        )
+                    }
                     
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
+                    // 底部按钮
                     Button(
                         onClick = {
                             scope.launch {
@@ -452,7 +495,7 @@ fun PixelEditDialog(
             Button(
                 onClick = onDismiss,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    containerColor = MaterialTheme.colorScheme.errorContainer
                 )
             ) {
                 Text("取消")
