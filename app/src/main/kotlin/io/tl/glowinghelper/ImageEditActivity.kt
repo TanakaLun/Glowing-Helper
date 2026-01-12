@@ -603,7 +603,7 @@ fun UnsavedChangesDialog(
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
                 ) {
-                    Text("直接退出")
+                    Text("丢弃修改")
                 }
 
                 TextButton(
