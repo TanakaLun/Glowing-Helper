@@ -21,6 +21,21 @@ android {
     buildFeatures {
         compose true
     }
+    
+    buildTypes {
+        release {
+
+            // Enables code-related app optimization.
+            minifyEnabled true
+
+            // Enables resource shrinking.
+            shrinkResources true
+
+            // Default file with automatically generated optimization rules.
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+
+        }
+    }
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
