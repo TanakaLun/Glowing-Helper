@@ -33,7 +33,7 @@
         <activity
             android:name=".GlowPreviewActivity"
             android:exported="false"
-            android:theme="@style/Theme.GlowingHelper" />
+            android:theme="@style/Theme.GlowingHelperActivity" />
         </activity>
     </application>
 
