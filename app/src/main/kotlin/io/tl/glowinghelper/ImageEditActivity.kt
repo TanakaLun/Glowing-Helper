@@ -3,6 +3,7 @@ package io.tl.glowinghelper
 import android.Manifest
 import android.content.ContentValues
 import android.content.pm.PackageManager
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
@@ -74,6 +75,7 @@ import androidx.core.view.WindowCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import io.tl.glowinghelper.ui.theme.GlowingHelperTheme
 
 class ImageEditActivity : ComponentActivity() {
@@ -261,7 +263,7 @@ fun ImageEditScreen(
                     )
                 }
                 
-                // 底部按钮
+                // 保存按钮
                 Button(
                     onClick = {
                         scope.launch {
@@ -279,6 +281,31 @@ fun ImageEditScreen(
                     )
                 ) {
                     Text("保存修改")
+                }
+                
+                // 预览按钮
+                Button(
+                    onClick = {
+                        scope.launch {
+                            pixelData?.let { data ->
+                                // 保存临时图片
+                                val tempFile = withContext(Dispatchers.IO) {
+                                    saveToTempFile(context, data)
+                                }
+                                // 启动预览Activity
+                                val intent = Intent(context, GlowPreviewActivity::class.java).apply {
+                                    putExtra(GlowPreviewActivity.EXTRA_IMAGE_URI, Uri.fromFile(tempFile))
+                                }
+                                context.startActivity(intent)
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondary
+                    )
+                ) {
+                    Text("预览Glowing效果")
                 }
             } else {
                 // 加载中
@@ -385,7 +412,7 @@ fun PixelEditDialog(
                 
                 Spacer(modifier = Modifier.height(8.dp))
                 
-                // 新增：批量修改选项
+                // 批量修改选项
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
@@ -643,7 +670,7 @@ class PixelData(
         pixels[index] = oldPixel.copy(alpha = newAlpha)
     }
     
-    // 新增：批量修改相同颜色像素的透明度
+    // 批量修改相同颜色像素的透明度
     fun updateAllPixelsWithColor(targetRed: Int, targetGreen: Int, targetBlue: Int, newAlpha: Int) {
         for (y in 0 until height) {
             for (x in 0 until width) {
@@ -751,5 +778,21 @@ suspend fun saveImage(context: android.content.Context, pixelData: PixelData): B
             }
             false
         }
+    }
+}
+
+// 保存临时文件的函数
+suspend fun saveToTempFile(context: android.content.Context, pixelData: PixelData): java.io.File {
+    return withContext(Dispatchers.IO) {
+        val bitmap = pixelData.toBitmap()
+        val tempFile = java.io.File.createTempFile(
+            "glow_preview_${System.currentTimeMillis()}",
+            ".png",
+            context.cacheDir
+        )
+        val outputStream = java.io.FileOutputStream(tempFile)
+        bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, outputStream)
+        outputStream.close()
+        tempFile
     }
 }
