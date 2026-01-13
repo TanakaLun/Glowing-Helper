@@ -12,8 +12,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -25,8 +23,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -100,7 +96,6 @@ fun GlowPreviewScreen(
     onBackRequest: () -> Unit
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     
     var pixelData by remember { mutableStateOf<PixelData?>(null) }
     var originalAspectRatio by remember { mutableStateOf(1f) }
@@ -212,7 +207,7 @@ fun GlowPreviewScreen(
                             value = ambient,
                             onValueChange = { ambient = it },
                             valueRange = 0f..1.5f,
-                            steps = 74 // (1.5 - 0) / 0.02 = 75 steps
+                            steps = 74
                         )
                         
                         // 发光强度参数
@@ -221,7 +216,7 @@ fun GlowPreviewScreen(
                             value = glowIntensity,
                             onValueChange = { glowIntensity = it },
                             valueRange = 0f..5f,
-                            steps = 250 // (5 - 0) / 0.02 = 250 steps
+                            steps = 250
                         )
                         
                         // 闪烁强度参数
@@ -230,7 +225,7 @@ fun GlowPreviewScreen(
                             value = shimmerIntensity,
                             onValueChange = { shimmerIntensity = it },
                             valueRange = 0f..1f,
-                            steps = 50 // (1 - 0) / 0.02 = 50 steps
+                            steps = 50
                         )
                         
                         // 发光溢出参数
@@ -291,31 +286,11 @@ fun GlowPreviewCanvas(
     shimmerTime: Float,
     modifier: Modifier = Modifier
 ) {
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
-    
     Box(
-        modifier = modifier
-            .clipToBounds()
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onDoubleTap = {
-                        // 双击重置缩放和位置
-                        scale = 1f
-                        offset = Offset.Zero
-                    }
-                )
-            }
+        modifier = modifier.clipToBounds()
     ) {
         Canvas(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(Unit) {
-                    detectTransformGestures { centroid: Offset, pan: Offset, zoom: Float, rotation: Float ->
-                        scale *= zoom
-                        offset += pan
-                    }
-                }
+            modifier = Modifier.fillMaxSize()
         ) {
             val canvasWidth = size.width
             val canvasHeight = size.height
@@ -327,70 +302,53 @@ fun GlowPreviewCanvas(
                 canvasHeight / imageHeight
             )
             
-            val finalScale = scaleToFit * scale
-            val centerX = (canvasWidth - imageWidth * finalScale) / 2 + offset.x
-            val centerY = (canvasHeight - imageHeight * finalScale) / 2 + offset.y
+            val finalScale = scaleToFit
+            val centerX = (canvasWidth - imageWidth * finalScale) / 2
+            val centerY = (canvasHeight - imageHeight * finalScale) / 2
             
-            // 创建一个离屏画布用于发光效果
+            // 修复点 1: glowCanvas 的 drawRect 调用
             val glowLayer = ImageBitmap(pixelData.width, pixelData.height)
-            val glowCanvas = Canvas(glowLayer)
-            
-            // 首先绘制基础像素和发光检测
+            val glowCanvas = androidx.compose.ui.graphics.Canvas(glowLayer)
+            val tempPaint = Paint() // 复用 Paint 对象
+
             for (y in 0 until pixelData.height) {
                 for (x in 0 until pixelData.width) {
                     val pixel = pixelData.getPixel(x, y)
-                    
                     if (pixel.alpha > 0) {
-                        val pixelX = x.toFloat()
-                        val pixelY = y.toFloat()
-                        
-                        // 检查是否为发光像素
-                        val isFullGlow = pixel.alpha == 252  // 100% 发光
-                        val isPartialGlow = pixel.alpha == 253  // 40% 发光
-                        val isGlowing = isFullGlow || isPartialGlow
-                        
-                        if (isGlowing) {
-                            // 绘制发光像素到离屏画布
-                            val glowColor = if (isFullGlow) {
-                                ComposeColor(
-                                    red = pixel.red / 255f,
-                                    green = pixel.green / 255f,
-                                    blue = pixel.blue / 255f,
-                                    alpha = 1f
-                                )
-                            } else {
-                                ComposeColor(
-                                    red = pixel.red / 255f * 0.4f,
-                                    green = pixel.green / 255f * 0.4f,
-                                    blue = pixel.blue / 255f * 0.4f,
-                                    alpha = 1f
-                                )
-                            }
-                            
+                        val isFullGlow = pixel.alpha == 252
+                        val isPartialGlow = pixel.alpha == 253
+                        if (isFullGlow || isPartialGlow) {
+                            val alphaMult = if (isFullGlow) 1f else 0.4f
+                            tempPaint.color = ComposeColor(
+                                red = pixel.red / 255f * alphaMult,
+                                green = pixel.green / 255f * alphaMult,
+                                blue = pixel.blue / 255f * alphaMult,
+                                alpha = 1f
+                            )
+                            // 底层 Canvas 使用 left, top, right, bottom
                             glowCanvas.drawRect(
-                                color = glowColor,
-                                topLeft = Offset(pixelX, pixelY),
-                                size = Size(1f, 1f)
+                                left = x.toFloat(),
+                                top = y.toFloat(),
+                                right = x.toFloat() + 1f,
+                                bottom = y.toFloat() + 1f,
+                                paint = tempPaint
                             )
                         }
                     }
                 }
             }
             
-            // 绘制到主画布
+            // 绘制主画面
             for (y in 0 until pixelData.height) {
                 for (x in 0 until pixelData.width) {
                     val pixel = pixelData.getPixel(x, y)
-                    
                     if (pixel.alpha > 0) {
                         val pixelX = centerX + x * finalScale
                         val pixelY = centerY + y * finalScale
                         val pixelSize = finalScale
                         
-                        if (pixelX + pixelSize > 0 && 
-                            pixelX < canvasWidth && 
-                            pixelY + pixelSize > 0 && 
-                            pixelY < canvasHeight) {
+                        if (pixelX + pixelSize > 0 && pixelX < canvasWidth && 
+                            pixelY + pixelSize > 0 && pixelY < canvasHeight) {
                             
                             val isFullGlow = pixel.alpha == 252
                             val isPartialGlow = pixel.alpha == 253
@@ -398,125 +356,97 @@ fun GlowPreviewCanvas(
                             
                             if (!isGlowing) {
                                 // 普通像素
-                                val baseColor = ComposeColor(
-                                    red = pixel.red / 255f * ambient,
-                                    green = pixel.green / 255f * ambient,
-                                    blue = pixel.blue / 255f * ambient,
-                                    alpha = pixel.alpha / 255f
-                                )
-                                
                                 drawRect(
-                                    color = baseColor,
+                                    color = ComposeColor(
+                                        red = pixel.red / 255f * ambient,
+                                        green = pixel.green / 255f * ambient,
+                                        blue = pixel.blue / 255f * ambient,
+                                        alpha = pixel.alpha / 255f
+                                    ),
                                     topLeft = Offset(pixelX, pixelY),
                                     size = Size(pixelSize, pixelSize)
                                 )
                                 
-                                // 添加发光溢出效果
+                                // 修复点 2: 混合模式的处理。DrawScope 直接支持 blendMode 参数。
                                 if (glowLeakIntensity > 0) {
-                                    // 检查周围像素是否有发光
+                                    // ... (检查邻居的代码保持不变)
                                     var hasGlowingNeighbor = false
-                                    val neighborOffsets = listOf(
-                                        -1 to -1, 0 to -1, 1 to -1,
-                                        -1 to 0,          1 to 0,
-                                        -1 to 1,  0 to 1,  1 to 1
-                                    )
-                                    
-                                    for ((dx, dy) in neighborOffsets) {
-                                        val nx = x + dx
-                                        val ny = y + dy
-                                        if (nx in 0 until pixelData.width && 
-                                            ny in 0 until pixelData.height) {
-                                            val neighbor = pixelData.getPixel(nx, ny)
-                                            if (neighbor.alpha == 252 || neighbor.alpha == 253) {
-                                                hasGlowingNeighbor = true
-                                                break
+                                    for (dx in -1..1) {
+                                        for (dy in -1..1) {
+                                            if (dx == 0 && dy == 0) continue
+                                            val nx = x + dx
+                                            val ny = y + dy
+                                            if (nx in 0 until pixelData.width && ny in 0 until pixelData.height) {
+                                                val neighbor = pixelData.getPixel(nx, ny)
+                                                if (neighbor.alpha == 252 || neighbor.alpha == 253) {
+                                                    hasGlowingNeighbor = true; break
+                                                }
                                             }
                                         }
+                                        if (hasGlowingNeighbor) break
                                     }
                                     
                                     if (hasGlowingNeighbor) {
-                                        val leakColor = ComposeColor(
-                                            red = pixel.red / 255f * ambient * glowLeakIntensity,
-                                            green = pixel.green / 255f * ambient * glowLeakIntensity,
-                                            blue = pixel.blue / 255f * ambient * glowLeakIntensity,
-                                            alpha = pixel.alpha / 255f * glowLeakIntensity
-                                        )
-                                        
-                                        // 使用Paint来设置混合模式
-                                        val paint = Paint().apply {
-                                            this.color = leakColor
-                                            this.blendMode = BlendMode.Plus
-                                        }
                                         drawRect(
+                                            color = ComposeColor(
+                                                red = pixel.red / 255f * ambient * glowLeakIntensity,
+                                                green = pixel.green / 255f * ambient * glowLeakIntensity,
+                                                blue = pixel.blue / 255f * ambient * glowLeakIntensity,
+                                                alpha = pixel.alpha / 255f * glowLeakIntensity
+                                            ),
                                             topLeft = Offset(pixelX, pixelY),
                                             size = Size(pixelSize, pixelSize),
-                                            paint = paint
+                                            blendMode = BlendMode.Plus // 直接在这里设置混合模式
                                         )
                                     }
                                 }
                             } else {
                                 // 发光像素
                                 val glowStrength = if (isFullGlow) 1f else 0.4f
-                                
-                                // 计算闪烁效果
                                 val shimmer = calculateShimmer(x, y, shimmerTime, shimmerIntensity)
                                 
-                                // 基础发光颜色
-                                val baseGlowColor = ComposeColor(
-                                    red = pixel.red / 255f * ambient,
-                                    green = pixel.green / 255f * ambient,
-                                    blue = pixel.blue / 255f * ambient,
-                                    alpha = pixel.alpha / 255f
-                                )
-                                
-                                // 发光效果颜色
-                                val glowColor = ComposeColor(
-                                    red = pixel.red / 255f * glowIntensity * glowStrength * (1f + shimmer * 0.3f),
-                                    green = pixel.green / 255f * glowIntensity * glowStrength * (1f + shimmer * 0.3f),
-                                    blue = pixel.blue / 255f * glowIntensity * glowStrength * (1f + shimmer * 0.3f),
-                                    alpha = 0.8f
-                                )
-                                
-                                // 绘制基础颜色
+                                // 绘制底色
                                 drawRect(
-                                    color = baseGlowColor,
+                                    color = ComposeColor(
+                                        red = pixel.red / 255f * ambient,
+                                        green = pixel.green / 255f * ambient,
+                                        blue = pixel.blue / 255f * ambient,
+                                        alpha = pixel.alpha / 255f
+                                    ),
                                     topLeft = Offset(pixelX, pixelY),
                                     size = Size(pixelSize, pixelSize)
                                 )
                                 
-                                // 绘制发光效果 - 使用Paint设置混合模式
-                                val glowPaint = Paint().apply {
-                                    this.color = glowColor
-                                    this.blendMode = BlendMode.Screen
-                                }
+                                // 修复点 3: 发光效果绘制
                                 drawRect(
+                                    color = ComposeColor(
+                                        red = pixel.red / 255f * glowIntensity * glowStrength * (1f + shimmer * 0.3f),
+                                        green = pixel.green / 255f * glowIntensity * glowStrength * (1f + shimmer * 0.3f),
+                                        blue = pixel.blue / 255f * glowIntensity * glowStrength * (1f + shimmer * 0.3f),
+                                        alpha = 0.8f
+                                    ),
                                     topLeft = Offset(pixelX, pixelY),
                                     size = Size(pixelSize, pixelSize),
-                                    paint = glowPaint
+                                    blendMode = BlendMode.Screen
                                 )
                                 
-                                // 添加光晕扩散效果
+                                // 修复点 4: 光晕扩散
                                 val glowRadius = pixelSize * 0.5f * glowIntensity * 0.3f
                                 if (glowRadius > 0) {
-                                    val spreadColor = ComposeColor(
+                                    val spreadColorBase = ComposeColor(
                                         red = pixel.red / 255f * glowIntensity * 0.2f,
                                         green = pixel.green / 255f * glowIntensity * 0.2f,
-                                        blue = pixel.blue / 255f * glowIntensity * 0.2f,
-                                        alpha = 0.3f
+                                        blue = pixel.blue / 255f * glowIntensity * 0.2f
                                     )
                                     
                                     for (i in 1..3) {
                                         val radius = glowRadius * i / 3f
                                         val alpha = 0.3f * (1f - i / 3f)
-                                        
-                                        val spreadPaint = Paint().apply {
-                                            this.color = spreadColor.copy(alpha = alpha)
-                                            this.blendMode = BlendMode.Screen
-                                        }
                                         drawCircle(
-                                            center = Offset(pixelX + pixelSize / 2, pixelY + pixelSize / 2),
+                                            color = spreadColorBase.copy(alpha = alpha),
                                             radius = radius,
-                                            paint = spreadPaint
+                                            center = Offset(pixelX + pixelSize / 2, pixelY + pixelSize / 2),
+                                            blendMode = BlendMode.Screen
                                         )
                                     }
                                 }
@@ -527,13 +457,6 @@ fun GlowPreviewCanvas(
             }
         }
     }
-}
-
-private fun calculateShimmer(x: Int, y: Int, time: Float, intensity: Float): Float {
-    // 基于位置和时间的简单闪烁计算
-    val position = x.toFloat() + y.toFloat()
-    val shimmer = sin(1.57f * position + 0.7854f * sin(position + 0.1f * time) + 0.8f * time)
-    return shimmer * shimmer * intensity
 }
 
 @Composable
@@ -565,4 +488,11 @@ fun ParameterSlider(
             modifier = Modifier.fillMaxWidth()
         )
     }
+}
+
+private fun calculateShimmer(x: Int, y: Int, time: Float, intensity: Float): Float {
+    // 基于位置和时间的简单闪烁计算
+    val position = x.toFloat() + y.toFloat()
+    val shimmer = sin(1.57f * position + 0.7854f * sin(position + 0.1f * time) + 0.8f * time)
+    return shimmer * shimmer * intensity
 }
