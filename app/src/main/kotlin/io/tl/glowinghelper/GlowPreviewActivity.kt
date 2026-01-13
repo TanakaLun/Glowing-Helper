@@ -96,17 +96,19 @@ fun GlowPreviewScreen(
     onBackRequest: () -> Unit
 ) {
     val context = LocalContext.current
-    
     var pixelData by remember { mutableStateOf<PixelData?>(null) }
     var originalAspectRatio by remember { mutableStateOf(1f) }
     
-    // Glow效果参数
+    // 参数状态声明
     var ambient by rememberSaveable { mutableStateOf(0.4f) }
     var glowIntensity by rememberSaveable { mutableStateOf(2.2f) }
     var shimmerIntensity by rememberSaveable { mutableStateOf(1.0f) }
     var glowLeakIntensity by rememberSaveable { mutableStateOf(0.4f) }
     
-    // 动画时间
+    // 滚动状态
+    val scrollState = rememberScrollState()
+    
+    // 动画逻辑
     val infiniteTransition = rememberInfiniteTransition()
     val shimmerTime by infiniteTransition.animateFloat(
         initialValue = 0f,
@@ -116,7 +118,7 @@ fun GlowPreviewScreen(
         )
     )
     
-    // 加载图片
+    // 图片加载逻辑
     LaunchedEffect(imageUri) {
         if (imageUri != null) {
             val bitmap = withContext(Dispatchers.IO) {
@@ -126,47 +128,38 @@ fun GlowPreviewScreen(
                 pixelData = PixelData.fromBitmap(loadedBitmap)
                 originalAspectRatio = if (loadedBitmap.height > 0) {
                     loadedBitmap.width.toFloat() / loadedBitmap.height.toFloat()
-                } else {
-                    1f
-                }
+                } else { 1f }
             }
         }
     }
-    
-    // 处理返回操作
+
     androidx.activity.compose.BackHandler(onBack = onBackRequest)
     
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { 
-                    Text(
-                        "Glowing效果预览",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp
-                    )
-                }
+                title = { Text("Glowing效果预览", fontWeight = FontWeight.Bold, fontSize = 20.sp) }
             )
         }
     ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            if (pixelData != null) {
-                // 预览画布区域
+        if (pixelData != null) {
+            // 主容器：不再整体滚动
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(horizontal = 16.dp)
+            ) {
+                // --- 第一部分：固定预览区 ---
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(originalAspectRatio)
+                        .padding(vertical = 16.dp)
                         .background(
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
                             shape = RoundedCornerShape(8.dp)
                         )
-                        .padding(1.dp)
                 ) {
                     GlowPreviewCanvas(
                         pixelData = pixelData!!,
@@ -175,102 +168,56 @@ fun GlowPreviewScreen(
                         shimmerIntensity = shimmerIntensity,
                         glowLeakIntensity = glowLeakIntensity,
                         shimmerTime = shimmerTime,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                color = MaterialTheme.colorScheme.surface,
-                                shape = RoundedCornerShape(7.dp)
-                            )
+                        modifier = Modifier.fillMaxSize()
                     )
                 }
-                
-                // 参数调节区域
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+
+                // --- 第二部分：可滚动控制区 ---
+                // weight(1f) 确保它填满剩余空间，verticalScroll 允许其内部内容滚动
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(scrollState)
+                        .padding(bottom = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
                     ) {
-                        Text(
-                            "Glow效果参数调节",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        
-                        // 环境光参数
-                        ParameterSlider(
-                            label = "环境光",
-                            value = ambient,
-                            onValueChange = { ambient = it },
-                            valueRange = 0f..1.5f,
-                            steps = 74
-                        )
-                        
-                        // 发光强度参数
-                        ParameterSlider(
-                            label = "发光强度",
-                            value = glowIntensity,
-                            onValueChange = { glowIntensity = it },
-                            valueRange = 0f..5f,
-                            steps = 250
-                        )
-                        
-                        // 闪烁强度参数
-                        ParameterSlider(
-                            label = "闪烁强度",
-                            value = shimmerIntensity,
-                            onValueChange = { shimmerIntensity = it },
-                            valueRange = 0f..1f,
-                            steps = 50
-                        )
-                        
-                        // 发光溢出参数
-                        ParameterSlider(
-                            label = "发光溢出",
-                            value = glowLeakIntensity,
-                            onValueChange = { glowLeakIntensity = it },
-                            valueRange = 0f..1f,
-                            steps = 50
-                        )
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text("Glow效果参数调节", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            
+                            ParameterSlider("环境光", ambient, { ambient = it }, 0f..1.5f, 74)
+                            ParameterSlider("发光强度", glowIntensity, { glowIntensity = it }, 0f..5f, 250)
+                            ParameterSlider("闪烁强度", shimmerIntensity, { shimmerIntensity = it }, 0f..1f, 50)
+                            ParameterSlider("发光溢出", glowLeakIntensity, { glowLeakIntensity = it }, 0f..1f, 50)
+                        }
                     }
-                }
-                
-                // 底部说明
-                Text(
-                    "提示: 像素透明度252/255为100%发光，253/255为40%发光",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 4.dp)
-                )
-                
-                // 返回按钮
-                Button(
-                    onClick = onBackRequest,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
+                    
+                    Text(
+                        "提示: 像素透明度252/255为100%发光，253/255为40%发光",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                ) {
-                    Text("返回编辑")
-                }
-            } else {
-                // 加载中
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    
+                    Button(
+                        onClick = onBackRequest,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        CircularProgressIndicator()
-                        Text("加载图片中...")
+                        Text("返回编辑")
                     }
                 }
+            }
+        } else {
+            // 加载中居中显示
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
             }
         }
     }
