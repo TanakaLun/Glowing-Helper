@@ -12,6 +12,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -23,6 +25,8 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -96,6 +100,7 @@ fun GlowPreviewScreen(
     onBackRequest: () -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     
     var pixelData by remember { mutableStateOf<PixelData?>(null) }
     var originalAspectRatio by remember { mutableStateOf(1f) }
@@ -207,7 +212,7 @@ fun GlowPreviewScreen(
                             value = ambient,
                             onValueChange = { ambient = it },
                             valueRange = 0f..1.5f,
-                            steps = 74
+                            steps = 74 // (1.5 - 0) / 0.02 = 75 steps
                         )
                         
                         // 发光强度参数
@@ -216,7 +221,7 @@ fun GlowPreviewScreen(
                             value = glowIntensity,
                             onValueChange = { glowIntensity = it },
                             valueRange = 0f..5f,
-                            steps = 250
+                            steps = 250 // (5 - 0) / 0.02 = 250 steps
                         )
                         
                         // 闪烁强度参数
@@ -225,7 +230,7 @@ fun GlowPreviewScreen(
                             value = shimmerIntensity,
                             onValueChange = { shimmerIntensity = it },
                             valueRange = 0f..1f,
-                            steps = 50
+                            steps = 50 // (1 - 0) / 0.02 = 50 steps
                         )
                         
                         // 发光溢出参数
@@ -286,26 +291,45 @@ fun GlowPreviewCanvas(
     shimmerTime: Float,
     modifier: Modifier = Modifier
 ) {
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    
     Box(
-        modifier = modifier.clipToBounds()
+        modifier = modifier
+            .clipToBounds()
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onDoubleTap = {
+                        // 双击重置缩放和位置
+                        scale = 1f
+                        offset = Offset.Zero
+                    }
+                )
+            }
     ) {
         Canvas(
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTransformGestures { centroid: Offset, pan: Offset, zoom: Float, rotation: Float ->
+                        scale *= zoom
+                        offset += pan
+                    }
+                }
         ) {
             val canvasWidth = size.width
             val canvasHeight = size.height
             val imageWidth = pixelData.width.toFloat()
             val imageHeight = pixelData.height.toFloat()
             
-            // 计算固定缩放比例，使图片适配画布
             val scaleToFit = minOf(
                 canvasWidth / imageWidth,
                 canvasHeight / imageHeight
             )
             
-            val finalScale = scaleToFit
-            val centerX = (canvasWidth - imageWidth * finalScale) / 2
-            val centerY = (canvasHeight - imageHeight * finalScale) / 2
+            val finalScale = scaleToFit * scale
+            val centerX = (canvasWidth - imageWidth * finalScale) / 2 + offset.x
+            val centerY = (canvasHeight - imageHeight * finalScale) / 2 + offset.y
             
             // 创建一个离屏画布用于发光效果
             val glowLayer = ImageBitmap(pixelData.width, pixelData.height)
@@ -363,7 +387,6 @@ fun GlowPreviewCanvas(
                         val pixelY = centerY + y * finalScale
                         val pixelSize = finalScale
                         
-                        // 只绘制在画布范围内的像素
                         if (pixelX + pixelSize > 0 && 
                             pixelX < canvasWidth && 
                             pixelY + pixelSize > 0 && 
@@ -421,14 +444,12 @@ fun GlowPreviewCanvas(
                                         
                                         // 使用Paint来设置混合模式
                                         val paint = Paint().apply {
-                                            color = leakColor
-                                            blendMode = BlendMode.Plus
+                                            this.color = leakColor
+                                            this.blendMode = BlendMode.Plus
                                         }
                                         drawRect(
-                                            left = pixelX,
-                                            top = pixelY,
-                                            right = pixelX + pixelSize,
-                                            bottom = pixelY + pixelSize,
+                                            topLeft = Offset(pixelX, pixelY),
+                                            size = Size(pixelSize, pixelSize),
                                             paint = paint
                                         )
                                     }
@@ -465,14 +486,12 @@ fun GlowPreviewCanvas(
                                 
                                 // 绘制发光效果 - 使用Paint设置混合模式
                                 val glowPaint = Paint().apply {
-                                    color = glowColor
-                                    blendMode = BlendMode.Screen
+                                    this.color = glowColor
+                                    this.blendMode = BlendMode.Screen
                                 }
                                 drawRect(
-                                    left = pixelX,
-                                    top = pixelY,
-                                    right = pixelX + pixelSize,
-                                    bottom = pixelY + pixelSize,
+                                    topLeft = Offset(pixelX, pixelY),
+                                    size = Size(pixelSize, pixelSize),
                                     paint = glowPaint
                                 )
                                 
@@ -491,8 +510,8 @@ fun GlowPreviewCanvas(
                                         val alpha = 0.3f * (1f - i / 3f)
                                         
                                         val spreadPaint = Paint().apply {
-                                            color = spreadColor.copy(alpha = alpha)
-                                            blendMode = BlendMode.Screen
+                                            this.color = spreadColor.copy(alpha = alpha)
+                                            this.blendMode = BlendMode.Screen
                                         }
                                         drawCircle(
                                             center = Offset(pixelX + pixelSize / 2, pixelY + pixelSize / 2),
@@ -508,6 +527,13 @@ fun GlowPreviewCanvas(
             }
         }
     }
+}
+
+private fun calculateShimmer(x: Int, y: Int, time: Float, intensity: Float): Float {
+    // 基于位置和时间的简单闪烁计算
+    val position = x.toFloat() + y.toFloat()
+    val shimmer = sin(1.57f * position + 0.7854f * sin(position + 0.1f * time) + 0.8f * time)
+    return shimmer * shimmer * intensity
 }
 
 @Composable
@@ -539,11 +565,4 @@ fun ParameterSlider(
             modifier = Modifier.fillMaxWidth()
         )
     }
-}
-
-private fun calculateShimmer(x: Int, y: Int, time: Float, intensity: Float): Float {
-    // 基于位置和时间的简单闪烁计算
-    val position = x.toFloat() + y.toFloat()
-    val shimmer = sin(1.57f * position + 0.7854f * sin(position + 0.1f * time) + 0.8f * time)
-    return shimmer * shimmer * intensity
 }
