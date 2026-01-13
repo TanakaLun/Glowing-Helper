@@ -68,9 +68,4 @@ dependencies {
     
     // 协程支持
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1"
-    
-    // 添加OpenGL ES支持
-    implementation "androidx.graphics:graphics-opengl:1.0.0"
-    implementation "com.google.android.filament:filament-android:1.9.25"
-    implementation "com.google.android.filament:gltfio-android:1.9.25"
 }
