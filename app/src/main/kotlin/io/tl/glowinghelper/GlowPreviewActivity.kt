@@ -12,8 +12,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -25,8 +23,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -100,195 +96,6 @@ fun GlowPreviewScreen(
     onBackRequest: () -> Unit
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    
-    var pixelData by remember { mutableStateOf<PixelData?>(null) }
-    var originalAspectRatio by remember { mutableStateOf(1f) }
-    
-    // Glow效果参数
-    var ambient by rememberSaveable { mutableStateOf(0.4f) }
-    var glowIntensity by rememberSaveable { mutableStateOf(2.2f) }
-    var shimmerIntensity by rememberSaveable { mutableStateOf(1.0f) }
-    var glowLeakIntensity by rememberSaveable { mutableStateOf(0.4f) }
-    
-    // 动画时间
-    val infiniteTransition = rememberInfiniteTransition()
-    val shimmerTime by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 2f * Math.PI.toFloat(),
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 4000, easing = LinearEasing)
-        )
-    )
-    
-    // 加载图片
-    LaunchedEffect(imageUri) {
-        if (imageUri != null) {
-            val bitmap = withContext(Dispatchers.IO) {
-                loadImageBitmap(context, imageUri)
-            }
-            bitmap?.let { loadedBitmap ->
-                pixelData = PixelData.fromBitmap(loadedBitmap)
-                originalAspectRatio = if (loadedBitmap.height > 0) {
-                    loadedBitmap.width.toFloat() / loadedBitmap.height.toFloat()
-                } else {
-                    1f
-                }
-            }
-        }
-    }
-    
-    // 处理返回操作
-    androidx.activity.compose.BackHandler(onBack = onBackRequest)
-    
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { 
-                    Text(
-                        "Glowing效果预览",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp
-                    )
-                }
-            )
-        }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            if (pixelData != null) {
-                // 预览画布区域
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(originalAspectRatio)
-                        .background(
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
-                            shape = RoundedCornerShape(8.dp)
-                        )
-                        .padding(1.dp)
-                ) {
-                    GlowPreviewCanvas(
-                        pixelData = pixelData!!,
-                        ambient = ambient,
-                        glowIntensity = glowIntensity,
-                        shimmerIntensity = shimmerIntensity,
-                        glowLeakIntensity = glowLeakIntensity,
-                        shimmerTime = shimmerTime,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                color = MaterialTheme.colorScheme.surface,
-                                shape = RoundedCornerShape(7.dp)
-                            )
-                    )
-                }
-                
-                // 参数调节区域
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Text(
-                            "Glow效果参数调节",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        
-                        // 环境光参数
-                        ParameterSlider(
-                            label = "环境光",
-                            value = ambient,
-                            onValueChange = { ambient = it },
-                            valueRange = 0f..1.5f,
-                            steps = 74 // (1.5 - 0) / 0.02 = 75 steps
-                        )
-                        
-                        // 发光强度参数
-                        ParameterSlider(
-                            label = "发光强度",
-                            value = glowIntensity,
-                            onValueChange = { glowIntensity = it },
-                            valueRange = 0f..5f,
-                            steps = 250 // (5 - 0) / 0.02 = 250 steps
-                        )
-                        
-                        // 闪烁强度参数
-                        ParameterSlider(
-                            label = "闪烁强度",
-                            value = shimmerIntensity,
-                            onValueChange = { shimmerIntensity = it },
-                            valueRange = 0f..1f,
-                            steps = 50 // (1 - 0) / 0.02 = 50 steps
-                        )
-                        
-                        // 发光溢出参数
-                        ParameterSlider(
-                            label = "发光溢出",
-                            value = glowLeakIntensity,
-                            onValueChange = { glowLeakIntensity = it },
-                            valueRange = 0f..1f,
-                            steps = 50
-                        )
-                    }
-                }
-                
-                // 底部说明
-                Text(
-                    "提示: 像素透明度252/255为100%发光，253/255为40%发光",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 4.dp)
-                )
-                
-                // 返回按钮
-                Button(
-                    onClick = onBackRequest,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
-                ) {
-                    Text("返回编辑")
-                }
-            } else {
-                // 加载中
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        CircularProgressIndicator()
-                        Text("加载图片中...")
-                    }
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun GlowPreviewScreen(
-    imageUri: Uri?,
-    onBackRequest: () -> Unit
-) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     
     var pixelData by remember { mutableStateOf<PixelData?>(null) }
     var originalAspectRatio by remember { mutableStateOf(1f) }
@@ -614,12 +421,14 @@ fun GlowPreviewCanvas(
                                         
                                         // 使用Paint来设置混合模式
                                         val paint = Paint().apply {
-                                            this.color = leakColor
-                                            this.blendMode = BlendMode.Plus
+                                            color = leakColor
+                                            blendMode = BlendMode.Plus
                                         }
                                         drawRect(
-                                            topLeft = Offset(pixelX, pixelY),
-                                            size = Size(pixelSize, pixelSize),
+                                            left = pixelX,
+                                            top = pixelY,
+                                            right = pixelX + pixelSize,
+                                            bottom = pixelY + pixelSize,
                                             paint = paint
                                         )
                                     }
@@ -656,12 +465,14 @@ fun GlowPreviewCanvas(
                                 
                                 // 绘制发光效果 - 使用Paint设置混合模式
                                 val glowPaint = Paint().apply {
-                                    this.color = glowColor
-                                    this.blendMode = BlendMode.Screen
+                                    color = glowColor
+                                    blendMode = BlendMode.Screen
                                 }
                                 drawRect(
-                                    topLeft = Offset(pixelX, pixelY),
-                                    size = Size(pixelSize, pixelSize),
+                                    left = pixelX,
+                                    top = pixelY,
+                                    right = pixelX + pixelSize,
+                                    bottom = pixelY + pixelSize,
                                     paint = glowPaint
                                 )
                                 
@@ -680,8 +491,8 @@ fun GlowPreviewCanvas(
                                         val alpha = 0.3f * (1f - i / 3f)
                                         
                                         val spreadPaint = Paint().apply {
-                                            this.color = spreadColor.copy(alpha = alpha)
-                                            this.blendMode = BlendMode.Screen
+                                            color = spreadColor.copy(alpha = alpha)
+                                            blendMode = BlendMode.Screen
                                         }
                                         drawCircle(
                                             center = Offset(pixelX + pixelSize / 2, pixelY + pixelSize / 2),
@@ -697,13 +508,6 @@ fun GlowPreviewCanvas(
             }
         }
     }
-}
-
-private fun calculateShimmer(x: Int, y: Int, time: Float, intensity: Float): Float {
-    // 基于位置和时间的简单闪烁计算
-    val position = x.toFloat() + y.toFloat()
-    val shimmer = sin(1.57f * position + 0.7854f * sin(position + 0.1f * time) + 0.8f * time)
-    return shimmer * shimmer * intensity
 }
 
 @Composable
@@ -735,4 +539,11 @@ fun ParameterSlider(
             modifier = Modifier.fillMaxWidth()
         )
     }
+}
+
+private fun calculateShimmer(x: Int, y: Int, time: Float, intensity: Float): Float {
+    // 基于位置和时间的简单闪烁计算
+    val position = x.toFloat() + y.toFloat()
+    val shimmer = sin(1.57f * position + 0.7854f * sin(position + 0.1f * time) + 0.8f * time)
+    return shimmer * shimmer * intensity
 }
