@@ -29,10 +29,9 @@
             android:name=".ImageEditActivity"
             android:exported="false"
             android:theme="@style/Theme.GlowingHelperActivity">
-        <activity
-            android:name=".GlowPreviewActivity"
-            android:exported="false"
-            android:theme="@style/Theme.GlowingHelperActivity" />
-    </application>
-
+            <activity
+                android:name=".GlowPreviewActivity"
+                android:exported="false"
+                android:theme="@style/Theme.GlowingHelperActivity" />
+        </application>
 </manifest>
