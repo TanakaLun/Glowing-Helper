@@ -29,12 +29,10 @@
             android:name=".ImageEditActivity"
             android:exported="false"
             android:theme="@style/Theme.GlowingHelperActivity">
-        </activity>
         <activity
             android:name=".GlowPreviewActivity"
             android:exported="false"
             android:theme="@style/Theme.GlowingHelperActivity" />
-        </activity>
     </application>
 
 </manifest>
