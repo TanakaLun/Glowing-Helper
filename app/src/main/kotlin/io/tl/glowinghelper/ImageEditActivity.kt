@@ -584,11 +584,11 @@ fun ImageEditor(
                             )
                             
                             // 绘制边框
-                            drawRect(
-                                color = androidx.compose.ui.graphics.Color.Gray.copy(alpha = 0.2f),
-                                topLeft = Offset(pixelX, pixelY),
-                                size = Size(pixelSize, pixelSize),
-                                style = Stroke(width = 0.5f)
+                            // drawRect(
+                                // color = androidx.compose.ui.graphics.Color.Gray.copy(alpha = 0.2f),
+                                // topLeft = Offset(pixelX, pixelY),
+                                // size = Size(pixelSize, pixelSize),
+                                // style = Stroke(width = 0.5f)
                             )
                         }
                     }
