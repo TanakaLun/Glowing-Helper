@@ -589,7 +589,7 @@ fun ImageEditor(
                                 // topLeft = Offset(pixelX, pixelY),
                                 // size = Size(pixelSize, pixelSize),
                                 // style = Stroke(width = 0.5f)
-                            )
+                            // )
                         }
                     }
                 }
