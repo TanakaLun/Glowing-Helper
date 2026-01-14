@@ -203,6 +203,14 @@ jobs:
       
       - name: ⚙️ Grant execute permission to gradlew
         run: chmod +x gradlew
+        
+      - name: Export keystore.properties & keystore
+        run: |
+          echo "${{ secrets.PASSWORD }}" | base64 -d > keystore.properties
+          chmod -x keystore.properties
+          
+          echo "${{ secrets.KEY }}" | base64 -d > app/TanakaLun.keystore
+          chmod -x app/TanakaLun.keystore
       
       - name: 🏗️ Build Release APK
         run: ./gradlew assembleRelease
