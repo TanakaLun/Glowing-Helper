@@ -16,6 +16,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.GlowingHelperActivity"
         android:enableOnBackInvokedCallback="true">
+        
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -25,11 +26,16 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        
         <activity
             android:name=".ImageEditActivity"
             android:exported="false"
-            android:theme="@style/Theme.GlowingHelperActivity">
-        </activity>
+            android:theme="@style/Theme.GlowingHelperActivity" />
+            
+        <activity
+            android:name=".GlowPreviewActivity"
+            android:exported="false"
+            android:theme="@style/Theme.GlowingHelperActivity" />
+            
     </application>
-
 </manifest>
