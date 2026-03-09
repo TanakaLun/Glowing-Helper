@@ -42,7 +42,6 @@ android {
     
     buildTypes {
         release {
-
             // Enables code-related app optimization.
             minifyEnabled true
 
@@ -64,12 +63,13 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
     
-    kotlinOptions {
-        jvmTarget = '17'
-    }
-    
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.14"
+    kotlin {
+        kotlinOptions {
+            jvmTarget = "17"
+        }
+        composeOptions {
+            kotlinCompilerExtensionVersion = "1.5.14"
+        }
     }
 }
 
