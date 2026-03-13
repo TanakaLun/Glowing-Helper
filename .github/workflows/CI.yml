@@ -1,7 +1,9 @@
-name: Android CI
+name: Build GlowingHelper APK
 
 on:
   push:
+    paths-ignore:
+      - '.github/**'
   workflow_dispatch:
     inputs:
       build_all:
@@ -24,9 +26,56 @@ permissions:
   actions: read
 
 jobs:
+  check-skip-ci:
+    runs-on: ubuntu-latest
+    outputs:
+      should-run: ${{ steps.check.outputs.should-run }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      
+      - name: Check for [skip ci] or [ci skip]
+        id: check
+        run: |
+          SHOULD_RUN="true"
+          
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            COMMIT_MSG=$(git log -1 --pretty=%B)
+          else
+            COMMIT_MSG="${{ github.event.head_commit.message }}"
+          fi
+          
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_BODY="${{ github.event.pull_request.body }}"
+          
+          echo "Commit message: $COMMIT_MSG"
+          echo "PR title: $PR_TITLE"
+          
+          if echo "$COMMIT_MSG" | grep -q "\[skip ci\]" || \
+             echo "$COMMIT_MSG" | grep -q "\[ci skip\]" || \
+             echo "$PR_TITLE" | grep -q "\[skip ci\]" || \
+             echo "$PR_TITLE" | grep -q "\[ci skip\]" || \
+             echo "$PR_BODY" | grep -q "\[skip ci\]" || \
+             echo "$PR_BODY" | grep -q "\[ci skip\]"; then
+            echo "检测到跳过标记，CI 将被跳过"
+            SHOULD_RUN="false"
+          fi
+          
+          echo "Event name: ${{ github.event_name }}"
+          echo "Actor: ${{ github.actor }}"
+          
+          echo "should-run=$SHOULD_RUN" >> $GITHUB_OUTPUT
+          echo "CI Operational Decisions: $SHOULD_RUN"
+          
   build-debug:
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event.inputs.build_all == 'both' || github.event.inputs.build_all == 'debug'
+    if: |
+      needs.check-skip-ci.outputs.should-run == 'true' && 
+      (github.event_name == 'push' || 
+       github.event.inputs.build_all == 'both' || 
+       github.event.inputs.build_all == 'debug')
     outputs:
       build_timestamp: ${{ steps.build_info.outputs.build_timestamp }}
     env:
@@ -77,23 +126,21 @@ jobs:
       
       - name: 🛠️ Modify Gradle Build File
         run: |
-          # 查找并修改 build.gradle
-          GRADLE_FILE="app/build.gradle"
+          # 查找并修改 build.gradle.kts
+          GRADLE_FILE="app/build.gradle.kts"
+          KOTLIN_FILE="app/src/main/kotlin/io/tl/RikoChi/logic/RikoChiLogic.kt"
           
           echo "Found gradle file: $GRADLE_FILE"
-            
-          # 备份原始文件
-          cp "$GRADLE_FILE" "${GRADLE_FILE}.bak"
-            
+                    
           # 使用 sed 替换 versionCode 和 versionName
-          sed -i -E "s/versionCode[[:space:]]+[0-9]+/versionCode ${{ steps.version_info.outputs.version_code }}/g" "$GRADLE_FILE"
-          sed -i -E "s/versionName[[:space:]]+'[^']*'/versionName '${{ steps.version_info.outputs.version_name }}'/g" "$GRADLE_FILE"
-            
+          sed -i -E "s/versionCode[[:space:]]+[0-9]+/versionCode = ${{ steps.version_info.outputs.version_code }}/g" "$GRADLE_FILE"
+          sed -i -E "s/versionName[[:space:]]+'[^']*'/versionName = \"${{ steps.version_info.outputs.version_name }}\"/g" "$GRADLE_FILE"
+          
           echo "Modified versionCode to: ${{ steps.version_info.outputs.version_code }}"
           echo "Modified versionName to: ${{ steps.version_info.outputs.version_name }}"
-            
+          
           # 显示修改后的相关行
-          echo "Modified lines:"
+          echo "Modified lines in build.gradle.kts:"
           grep -n "versionCode\|versionName" "$GRADLE_FILE" || true
       
       - name: ⚙️ Grant execute permission to gradlew
@@ -101,6 +148,8 @@ jobs:
       
       - name: 🏗️ Build Debug APK
         run: ./gradlew assembleDebug
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs='-Xmx4g -XX:MaxMetaspaceSize=1g'"
       
       - name: 📦 Find APK file and rename
         id: build_info
@@ -130,7 +179,11 @@ jobs:
 
   build-release:
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event.inputs.build_all == 'both' || github.event.inputs.build_all == 'release'
+    if: |
+      needs.check-skip-ci.outputs.should-run == 'true' && 
+      (github.event_name == 'push' || 
+       github.event.inputs.build_all == 'both' || 
+       github.event.inputs.build_all == 'release')
     outputs:
       build_timestamp: ${{ steps.build_info.outputs.build_timestamp }}
     env:
@@ -182,38 +235,30 @@ jobs:
       
       - name: 🛠️ Modify Gradle Build File
         run: |
-          # 查找并修改 build.gradle
-          GRADLE_FILE="app/build.gradle"
+          # 查找并修改 build.gradle.kts
+          GRADLE_FILE="app/build.gradle.kts"
+          KOTLIN_FILE="app/src/main/kotlin/io/tl/RikoChi/logic/RikoChiLogic.kt"
           
           echo "Found gradle file: $GRADLE_FILE"
-            
-          # 备份原始文件
-          cp "$GRADLE_FILE" "${GRADLE_FILE}.bak"
-            
+                    
           # 使用 sed 替换 versionCode 和 versionName
-          sed -i -E "s/versionCode[[:space:]]+[0-9]+/versionCode ${{ steps.version_info.outputs.version_code }}/g" "$GRADLE_FILE"
-          sed -i -E "s/versionName[[:space:]]+'[^']*'/versionName '${{ steps.version_info.outputs.version_name }}'/g" "$GRADLE_FILE"
-            
+          sed -i -E "s/versionCode[[:space:]]+[0-9]+/versionCode = ${{ steps.version_info.outputs.version_code }}/g" "$GRADLE_FILE"
+          sed -i -E "s/versionName[[:space:]]+'[^']*'/versionName = \"${{ steps.version_info.outputs.version_name }}\"/g" "$GRADLE_FILE"
+          
           echo "Modified versionCode to: ${{ steps.version_info.outputs.version_code }}"
           echo "Modified versionName to: ${{ steps.version_info.outputs.version_name }}"
-            
+          
           # 显示修改后的相关行
-          echo "Modified lines:"
+          echo "Modified lines in build.gradle.kts:"
           grep -n "versionCode\|versionName" "$GRADLE_FILE" || true
       
       - name: ⚙️ Grant execute permission to gradlew
         run: chmod +x gradlew
-        
-      - name: Export keystore.properties
-        run: |
-          echo "${{ secrets.PASSWORD }}" | base64 -d > keystore.properties
-          chmod -x keystore.properties
-          
-          echo "${{ secrets.KEY }}" | base64 -d > app/TanakaLun.keystore
-          chmod -x app/TanakaLun.keystore
       
       - name: 🏗️ Build Release APK
         run: ./gradlew assembleRelease
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs='-Xmx4g -XX:MaxMetaspaceSize=1g'"
       
       - name: 📦 Find APK file and rename
         id: build_info
