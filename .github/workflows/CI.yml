@@ -128,7 +128,6 @@ jobs:
         run: |
           # 查找并修改 build.gradle.kts
           GRADLE_FILE="app/build.gradle.kts"
-          KOTLIN_FILE="app/src/main/kotlin/io/tl/RikoChi/logic/RikoChiLogic.kt"
           
           echo "Found gradle file: $GRADLE_FILE"
                     
@@ -237,7 +236,6 @@ jobs:
         run: |
           # 查找并修改 build.gradle.kts
           GRADLE_FILE="app/build.gradle.kts"
-          KOTLIN_FILE="app/src/main/kotlin/io/tl/RikoChi/logic/RikoChiLogic.kt"
           
           echo "Found gradle file: $GRADLE_FILE"
                     
