@@ -19,7 +19,7 @@ android {
     defaultConfig {
         applicationId = "io.tl.glowinghelper"
         minSdk = 33
-        targetSdk = 34
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
 
