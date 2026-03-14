@@ -1,9 +1,7 @@
-name: Build GlowingHelper APK
+name: CI Build
 
 on:
   push:
-    paths-ignore:
-      - '.github/**'
   workflow_dispatch:
     inputs:
       build_all:
@@ -35,47 +33,70 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-      
+    
+      - name: Debug Info
+        run: |
+          echo "Event name: ${{ github.event_name }}"
+          echo "Actor: ${{ github.actor }}"
+          echo "Ref: ${{ github.ref }}"
+     
       - name: Check for [skip ci] or [ci skip]
         id: check
         run: |
           SHOULD_RUN="true"
           
-          if [[ "${{ github.event_name }}" == "push" ]]; then
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            COMMIT_MSG=""
+          elif [[ "${{ github.event_name }}" == "push" ]]; then
             COMMIT_MSG=$(git log -1 --pretty=%B)
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            COMMIT_MSG="${{ github.event.pull_request.head.sha }}"
+            PR_TITLE="${{ github.event.pull_request.title }}"
+            PR_BODY="${{ github.event.pull_request.body }}"
           else
-            COMMIT_MSG="${{ github.event.head_commit.message }}"
+            COMMIT_MSG=""
+          fi
+        
+          echo "====================="
+          echo "Event type: ${{ github.event_name }}"
+          echo "Commit message: '$COMMIT_MSG'"
+          [[ -n "$PR_TITLE" ]] && echo "PR Title: '$PR_TITLE'"
+          echo "====================="
+        
+          if [[ -n "$COMMIT_MSG" ]]; then
+            if echo "$COMMIT_MSG" | grep -q "\[skip ci\]" || echo "$COMMIT_MSG" | grep -q "\[ci skip\]"; then
+              SHOULD_RUN="false"
+            fi
           fi
           
-          PR_TITLE="${{ github.event.pull_request.title }}"
-          PR_BODY="${{ github.event.pull_request.body }}"
+          if [[ "${{ github.event_name }}" == "pull_request" && -n "$PR_TITLE" ]]; then
+            if echo "$PR_TITLE" | grep -q "\[skip ci\]" || echo "$PR_TITLE" | grep -q "\[ci skip\]"; then
+              SHOULD_RUN="false"
+            fi
+          fi
+        
+          if [[ "${{ github.event_name }}" == "pull_request" && -n "$PR_BODY" ]]; then
+            if echo "$PR_BODY" | grep -q "\[skip ci\]" || echo "$PR_BODY" | grep -q "\[ci skip\]"; then
+              SHOULD_RUN="false"
+            fi
+          fi
           
-          echo "Commit message: $COMMIT_MSG"
-          echo "PR title: $PR_TITLE"
-          
-          if echo "$COMMIT_MSG" | grep -q "\[skip ci\]" || \
-             echo "$COMMIT_MSG" | grep -q "\[ci skip\]" || \
-             echo "$PR_TITLE" | grep -q "\[skip ci\]" || \
-             echo "$PR_TITLE" | grep -q "\[ci skip\]" || \
-             echo "$PR_BODY" | grep -q "\[skip ci\]" || \
-             echo "$PR_BODY" | grep -q "\[ci skip\]"; then
-            echo "检测到跳过标记，CI 将被跳过"
+          if [[ "${{ github.event_name }}" == "push" ]] && [[ "${{ github.actor }}" == "dependabot[bot]" ]]; then
             SHOULD_RUN="false"
           fi
           
-          echo "Event name: ${{ github.event_name }}"
-          echo "Actor: ${{ github.actor }}"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            SHOULD_RUN="true"
+          fi
           
           echo "should-run=$SHOULD_RUN" >> $GITHUB_OUTPUT
-          echo "CI Operational Decisions: $SHOULD_RUN"
           
   build-debug:
-    runs-on: ubuntu-latest
+    needs: check-skip-ci
     if: |
       needs.check-skip-ci.outputs.should-run == 'true' && 
-      (github.event_name == 'push' || 
-       github.event.inputs.build_all == 'both' || 
-       github.event.inputs.build_all == 'debug')
+      (github.event_name == 'push' || github.event.inputs.build_all == 'both' || github.event.inputs.build_all == 'debug')
+    runs-on: ubuntu-latest
     outputs:
       build_timestamp: ${{ steps.build_info.outputs.build_timestamp }}
     env:
@@ -83,12 +104,12 @@ jobs:
       BUILD_TYPE: "debug"
     steps:
       - name: ⬇️ Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0  # 获取所有提交历史，用于计算版本号
       
       - name: 🛠️ Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -141,14 +162,13 @@ jobs:
           # 显示修改后的相关行
           echo "Modified lines in build.gradle.kts:"
           grep -n "versionCode\|versionName" "$GRADLE_FILE" || true
+         
       
       - name: ⚙️ Grant execute permission to gradlew
         run: chmod +x gradlew
       
       - name: 🏗️ Build Debug APK
         run: ./gradlew assembleDebug
-        env:
-          GRADLE_OPTS: "-Dorg.gradle.jvmargs='-Xmx4g -XX:MaxMetaspaceSize=1g'"
       
       - name: 📦 Find APK file and rename
         id: build_info
@@ -170,19 +190,18 @@ jobs:
           echo "Found and renamed APK to: $NEW_APK_PATH"
       
       - name: 📤 Upload Debug APK Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: GlowingHelper-debug-v${{ steps.version_info.outputs.version_code }}
           path: ${{ steps.build_info.outputs.apk_path }}
           retention-days: 7
 
   build-release:
-    runs-on: ubuntu-latest
+    needs: check-skip-ci
     if: |
       needs.check-skip-ci.outputs.should-run == 'true' && 
-      (github.event_name == 'push' || 
-       github.event.inputs.build_all == 'both' || 
-       github.event.inputs.build_all == 'release')
+      (github.event_name == 'push' || github.event.inputs.build_all == 'both' || github.event.inputs.build_all == 'release')
+    runs-on: ubuntu-latest
     outputs:
       build_timestamp: ${{ steps.build_info.outputs.build_timestamp }}
     env:
@@ -191,12 +210,12 @@ jobs:
       GRADLE_OPTS: "-Dorg.gradle.jvmargs='-Xmx4g -XX:MaxMetaspaceSize=1g'"
     steps:
       - name: ⬇️ Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0  # 获取所有提交历史，用于计算版本号
       
       - name: 🛠️ Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -240,8 +259,8 @@ jobs:
           echo "Found gradle file: $GRADLE_FILE"
                     
           # 使用 sed 替换 versionCode 和 versionName
-          sed -i -E "s/versionCode[[:space:]]+[0-9]+/versionCode = ${{ steps.version_info.outputs.version_code }}/g" "$GRADLE_FILE"
-          sed -i -E "s/versionName[[:space:]]+'[^']*'/versionName = \"${{ steps.version_info.outputs.version_name }}\"/g" "$GRADLE_FILE"
+          sed -i -E "s/versionCode = 1/versionCode = ${{ steps.version_info.outputs.version_code }}/g" "$GRADLE_FILE"
+          sed -i -E "s/versionName = \"1.0\"/versionName = \"${{ steps.version_info.outputs.version_name }}\"/g" "$GRADLE_FILE"
           
           echo "Modified versionCode to: ${{ steps.version_info.outputs.version_code }}"
           echo "Modified versionName to: ${{ steps.version_info.outputs.version_name }}"
@@ -249,14 +268,21 @@ jobs:
           # 显示修改后的相关行
           echo "Modified lines in build.gradle.kts:"
           grep -n "versionCode\|versionName" "$GRADLE_FILE" || true
+         
       
       - name: ⚙️ Grant execute permission to gradlew
         run: chmod +x gradlew
-      
+
+      - name: Export keystore.properties
+        run: |
+          echo "${{ secrets.PASSWORD }}" | base64 -d > keystore.properties
+          chmod -x keystore.properties
+          
+          echo "${{ secrets.KEY }}" | base64 -d > app/TanakaLun.keystore
+          chmod -x app/TanakaLun.keystore
+                
       - name: 🏗️ Build Release APK
         run: ./gradlew assembleRelease
-        env:
-          GRADLE_OPTS: "-Dorg.gradle.jvmargs='-Xmx4g -XX:MaxMetaspaceSize=1g'"
       
       - name: 📦 Find APK file and rename
         id: build_info
@@ -278,7 +304,7 @@ jobs:
           echo "Found and renamed APK to: $NEW_APK_PATH"
       
       - name: 📤 Upload Release APK Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: GlowingHelper-release-v${{ steps.version_info.outputs.version_code }}
           path: ${{ steps.build_info.outputs.apk_path }}
