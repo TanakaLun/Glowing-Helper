@@ -94,7 +94,7 @@ jobs:
           java-version: '17'
       
       - name: 💻 Set up Android SDK and NDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
       
       - name: ⚙️ Calculate Version Info
         id: version_info
@@ -202,7 +202,7 @@ jobs:
           java-version: '17'
       
       - name: 💻 Set up Android SDK and NDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
       
       - name: ⚙️ Calculate Version Info
         id: version_info
